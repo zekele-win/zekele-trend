@@ -1,0 +1,9 @@
+{
+  "description": "zekele-trend 数据抓取调度（北京时间，本机 crontab）",
+  "interpreter": "/opt/homebrew/bin/python3.13",
+  "workdir": "/Users/qt/prj/zekele/zekele-trend/cot",
+  "entries": [
+    {"cron": "0 6 * * 6", "command": "build.py", "note": "COT 周六主抓（周五 15:30 ET 发布后约 1.5h）"},
+    {"cron": "0 8 * * *", "command": "build.py", "note": "VIX 每日更新 + COT 兜底（含周六/周日，漏跑自动自愈）"}
+  ]
+}

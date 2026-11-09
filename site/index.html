@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>美股杠杆基金仓位追踪</title>
+<script src="chart.umd.min.js"></script>
+<style>
+:root {
+  --bg: #0f1115;
+  --card: #1a1d24;
+  --border: #2a2e38;
+  --fg: #e6e8ee;
+  --muted: #8b91a0;
+  --accent: #4da3ff;
+  --long: #34d399;
+  --short: #f87171;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+header {
+  position: sticky; top: 0; z-index: 10;
+  background: rgba(15,17,21,0.92);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 20px;
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 18px;
+}
+header h1 { font-size: 16px; margin: 0; font-weight: 600; }
+.status-line { font-size: 13px; color: var(--muted); }
+.status-line b { color: var(--fg); font-weight: 600; }
+#retry {
+  display: none; cursor: pointer; color: var(--accent); text-decoration: underline;
+  background: none; border: none; font-size: 13px; padding: 0; font-family: inherit;
+}
+main {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(430px, 1fr));
+  gap: 16px;
+  padding: 16px 20px 40px;
+}
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+}
+.card h2 { font-size: 14px; margin: 0 0 2px; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.card .badge { font-size: 12px; color: var(--muted); font-weight: normal; }
+.net-up { color: var(--long); }
+.net-down { color: var(--short); }
+.card canvas { width: 100%; height: 260px; }
+@media (max-width: 600px) {
+  main { grid-template-columns: 1fr; padding: 12px; }
+  header { padding: 10px 14px; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>美股杠杆基金仓位追踪</h1>
+  <span class="status-line" id="cot-status">COT —</span>
+  <span class="status-line" id="vix-status">VIX —</span>
+  <span class="status-line" id="countdown">—</span>
+  <button id="retry">加载失败，点击重试</button>
+</header>
+<main id="cards"></main>
+<script>
+(function () {
+  'use strict';
+  var cards = document.getElementById('cards');
+  var cotStatus = document.getElementById('cot-status');
+  var vixStatus = document.getElementById('vix-status');
+  var countdownEl = document.getElementById('countdown');
+  var retryBtn = document.getElementById('retry');
+
+  function fmtPct(v) { return (v === null || v === undefined) ? '—' : Math.round(v); }
+
+  function fmtNet(v) { return (v === null || v === undefined) ? '—' : (v >= 0 ? '+' : '') + v.toFixed(1) + '%'; }
+
+  function pctClass(v) { return (v === null || v === undefined || v === 0) ? '' : (v > 0 ? 'net-up' : 'net-down'); }
+
+  function renderCot(cot) {
+    Object.keys(cot.markets).forEach(function (code) {
+      var mk = cot.markets[code];
+      var latest = mk.latest;
+      var netPct = latest ? latest.net_pct : null;
+      var p = mk.percentiles || {};
+      var card = document.createElement('section');
+      card.className = 'card';
+      var h = document.createElement('h2');
+      h.innerHTML = mk.name +
+        ' <span class="badge">净多 <span class="' + pctClass(netPct) + '">' + fmtNet(netPct) + '</span>' +
+        ' · 分位 ' + fmtPct(p.net_pct) + '%</span>';
+      var cv = document.createElement('canvas');
+      cv.id = 'chart-' + code;
+      card.appendChild(h);
+      card.appendChild(cv);
+      cards.appendChild(card);
+
+      var dates = mk.series.map(function (s) { return s.date; });
+      new Chart(cv, {
+        type: 'line',
+        data: {
+          labels: dates,
+          datasets: [
+            { label: '净多占比', data: mk.series.map(function (s) { return s.net_pct; }),
+              borderColor: '#4da3ff', backgroundColor: '#4da3ff', borderWidth: 2.4, pointRadius: 0, tension: 0.15 },
+            { label: '多头占比', data: mk.series.map(function (s) { return s.long_pct; }),
+              borderColor: '#34d399', borderWidth: 1.1, pointRadius: 0, tension: 0.15 },
+            { label: '空头占比', data: mk.series.map(function (s) { return s.short_pct; }),
+              borderColor: '#f87171', borderWidth: 1.1, pointRadius: 0, tension: 0.15 }
+          ]
+        },
+        options: {
+          responsive: true, maintainAspectRatio: false,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { labels: { color: '#8b91a0', boxWidth: 14, font: { size: 11 } } },
+            tooltip: {
+              callbacks: {
+                label: function (ctx) { return ctx.dataset.label + ': ' + (ctx.parsed.y === null ? '—' : ctx.parsed.y.toFixed(1) + '%'); }
+              }
+            }
+          },
+          scales: {
+            x: { ticks: { color: '#5a6070', maxTicksLimit: 10, font: { size: 10 } }, grid: { color: '#20242e' } },
+            y: { ticks: { color: '#5a6070', font: { size: 10 }, callback: function (v) { return v + '%'; } }, grid: { color: '#20242e' } }
+          }
+        }
+      });
+    });
+  }
+
+  function renderVix(vix) {
+    var card = document.createElement('section');
+    card.className = 'card';
+    var latest = vix.latest;
+    var h = document.createElement('h2');
+    h.innerHTML = 'VIX 恐慌指数' +
+      ' <span class="badge">最新 ' + (latest ? latest.value.toFixed(2) : '—') +
+      ' · 分位 ' + fmtPct(vix.percentile) + '%</span>';
+    var cv = document.createElement('canvas');
+    cv.id = 'chart-vix';
+    card.appendChild(h);
+    card.appendChild(cv);
+    cards.appendChild(card);
+
+    new Chart(cv, {
+      type: 'line',
+      data: {
+        labels: vix.series.map(function (s) { return s.date; }),
+        datasets: [
+          { label: 'VIX', data: vix.series.map(function (s) { return s.value; }),
+            borderColor: '#e5b567', backgroundColor: '#e5b567', borderWidth: 1.8, pointRadius: 0, tension: 0.15 }
+        ]
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: function (ctx) { return 'VIX: ' + ctx.parsed.y.toFixed(2); } } }
+        },
+        scales: {
+          x: { ticks: { color: '#5a6070', maxTicksLimit: 10, font: { size: 10 } }, grid: { color: '#20242e' } },
+          y: { ticks: { color: '#5a6070', font: { size: 10 } }, grid: { color: '#20242e' } }
+        }
+      }
+    });
+  }
+
+  function renderStatus(cot, vix) {
+    cotStatus.innerHTML = 'COT 截至 <b>' + cot.as_of + '</b>';
+    vixStatus.innerHTML = 'VIX 截至 <b>' + (vix.as_of || '—') + '</b>';
+    retryBtn.style.display = 'none';
+  }
+
+  // COT 下一期发布：周五 15:30 美东 ≈ 北京时间周六 04:30（冬令时，夏令时 03:30，误差 1h 可接受）
+  function nextCotRelease() {
+    var now = new Date();
+    var day = now.getDay(); // 0=周日 6=周六
+    var daysUntil = (6 - day + 7) % 7;
+    if (daysUntil === 0 && now.getHours() * 60 + now.getMinutes() >= 4 * 60 + 30) daysUntil = 7;
+    var target = new Date(now);
+    target.setDate(now.getDate() + daysUntil);
+    target.setHours(4, 30, 0, 0);
+    return target;
+  }
+
+  function updateCountdown() {
+    var diff = nextCotRelease() - new Date();
+    if (diff <= 0) { countdownEl.innerHTML = '下一期 COT 即将发布'; return; }
+    var d = Math.floor(diff / 86400000);
+    var h = Math.floor(diff % 86400000 / 3600000);
+    var m = Math.floor(diff % 3600000 / 60000);
+    countdownEl.innerHTML = '下一期 COT：' + d + ' 天 ' + h + ' 小时 ' + m + ' 分后发布';
+  }
+
+  function load(force) {
+    cards.innerHTML = '';
+    retryBtn.style.display = 'none';
+    cotStatus.innerHTML = 'COT 加载中…';
+    vixStatus.innerHTML = 'VIX 加载中…';
+    var q = force ? '?t=' + Date.now() : '';
+    Promise.all([
+      fetch('cot.json' + q, { cache: force ? 'no-store' : 'default' }).then(function (r) { if (!r.ok) throw new Error('cot ' + r.status); return r.json(); }),
+      fetch('vix.json' + q, { cache: force ? 'no-store' : 'default' }).then(function (r) { if (!r.ok) throw new Error('vix ' + r.status); return r.json(); })
+    ]).then(function (res) {
+      renderCot(res[0]);
+      renderVix(res[1]);
+      renderStatus(res[0], res[1]);
+    }).catch(function (e) {
+      cotStatus.innerHTML = 'COT 加载失败';
+      vixStatus.innerHTML = 'VIX 加载失败';
+      retryBtn.style.display = 'inline';
+      console.error(e);
+    });
+  }
+
+  retryBtn.addEventListener('click', function () { load(true); });
+  updateCountdown();
+  setInterval(updateCountdown, 60000);
+  load(false);
+})();
+</script>
+</body>
+</html>

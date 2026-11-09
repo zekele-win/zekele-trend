@@ -1,0 +1,12 @@
+# 归档缓存（可重新下载，不入库）
+cot/history/archive/
+
+# wrangler 本地状态
+.wrangler/
+
+# Python
+__pycache__/
+*.pyc
+
+# 系统文件
+.DS_Store
