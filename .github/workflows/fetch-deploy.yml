@@ -1,0 +1,43 @@
+name: 抓取 + 部署
+
+on:
+  schedule:
+    # UTC 时区（北京时间 = UTC+8）
+    # 周五 22:00 UTC = 周六 06:00 北京（COT 主抓，发布后 ~1.5h）
+    - cron: '0 22 * * 5'
+    # 每日 00:00 UTC = 08:00 北京（VIX 每日 + COT 兜底）
+    - cron: '0 0 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  fetch-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: 恢复归档缓存（不可变归档，避免每次全量下载）
+        uses: actions/cache@v4
+        with:
+          path: cot/history/archive
+          key: cot-archive-${{ github.run_id }}
+          restore-keys: |
+            cot-archive-
+
+      - name: 抓取 + 生成 json
+        run: cd cot && python build.py
+
+      - name: 部署到 Cloudflare Pages
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy site/ --project-name zekele-trend
